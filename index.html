@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SuaraPro - Azure Studio Edition</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #020617; 
+            color: #e2e8f0;
+            overflow-x: hidden;
+        }
+        
+        /* Scrollbar Tipis */
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        .glass {
+            background: rgba(15, 23, 42, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .glass-card {
+            background: linear-gradient(180deg, rgba(30, 41, 59, 0.4) 0%, rgba(15, 23, 42, 0.4) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.2s ease;
+        }
+        .glass-card:hover {
+            border-color: rgba(139, 92, 246, 0.4);
+            background: rgba(30, 41, 59, 0.6);
+            transform: translateX(4px);
+        }
+
+        /* Slider Custom */
+        input[type=range] { -webkit-appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%;
+            background: #fff; margin-top: -6px; cursor: pointer;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5); transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 4px; cursor: pointer; background: #1e293b; border-radius: 2px;
+            background-image: linear-gradient(90deg, #0ea5e9, #3b82f6); /* Updated to match Azure blue */
+            background-size: 0% 100%; background-repeat: no-repeat;
+        }
+
+        .glow-active { 
+            box-shadow: 0 0 20px rgba(14, 165, 233, 0.4);
+            animation: pulse-border 2s infinite;
+        }
+        @keyframes pulse-border {
+            0% { border-color: rgba(14, 165, 233, 0.5); }
+            50% { border-color: rgba(56, 189, 248, 0.8); }
+            100% { border-color: rgba(14, 165, 233, 0.5); }
+        }
+        
+        .blob {
+            position: absolute; filter: blur(90px); z-index: -1; opacity: 0.3;
+            animation: float 15s infinite ease-in-out;
+        }
+        @keyframes float {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(20px, 20px) rotate(10deg); }
+            100% { transform: translate(0, 0) rotate(0deg); }
+        }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden selection:bg-sky-500 selection:text-white">
+
+    <!-- Background Effects -->
+    <div class="blob bg-sky-600 w-96 h-96 top-0 left-0 rounded-full mix-blend-multiply"></div>
+    <div class="blob bg-blue-800 w-96 h-96 bottom-0 right-0 rounded-full mix-blend-multiply animation-delay-2000"></div>
+
+    <div id="root" class="w-full h-full flex flex-col"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- VISUALIZER COMPONENT ---
+        const AudioVisualizer = ({ isPlaying, audioContext, sourceNode }) => {
+            const canvasRef = useRef(null);
+            const animationRef = useRef(null);
+            const analyserRef = useRef(null);
+
+            useEffect(() => {
+                if (!audioContext || !sourceNode) return;
+                
+                if (!analyserRef.current) {
+                    const analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 256;
+                    sourceNode.connect(analyser);
+                    analyser.connect(audioContext.destination); 
+                    analyserRef.current = analyser;
+                }
+
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                const analyser = analyserRef.current;
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+
+                const draw = () => {
+                    if (!isPlaying) {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.beginPath(); ctx.moveTo(0, canvas.height/2); ctx.lineTo(canvas.width, canvas.height/2);
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'; ctx.lineWidth = 1; ctx.stroke();
+                        return;
+                    }
+
+                    animationRef.current = requestAnimationFrame(draw);
+                    analyser.getByteFrequencyData(dataArray);
+
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    const barWidth = (canvas.width / bufferLength) * 2.5;
+                    let barHeight; let x = 0;
+
+                    for (let i = 0; i < bufferLength; i++) {
+                        barHeight = dataArray[i] / 2.5;
+                        const gradient = ctx.createLinearGradient(0, canvas.height - barHeight, 0, canvas.height);
+                        gradient.addColorStop(0, '#38bdf8'); 
+                        gradient.addColorStop(1, '#0284c7'); 
+                        ctx.fillStyle = gradient; ctx.beginPath();
+                        ctx.roundRect(x, (canvas.height/2)-(barHeight/2), barWidth-2, barHeight, [2]);
+                        ctx.fill();
+                        x += barWidth + 1;
+                    }
+                };
+
+                if (isPlaying) draw();
+                else {
+                    cancelAnimationFrame(animationRef.current);
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.beginPath(); ctx.moveTo(0, canvas.height/2); ctx.lineTo(canvas.width, canvas.height/2);
+                    ctx.strokeStyle = 'rgba(148, 163, 184, 0.1)'; ctx.lineWidth = 1; ctx.stroke();
+                }
+
+                return () => cancelAnimationFrame(animationRef.current);
+            }, [isPlaying, audioContext, sourceNode]);
+
+            return <canvas ref={canvasRef} width={600} height={60} className="w-full h-full" />;
+        };
+
+        function App() {
+            const [text, setText] = useState("Selamat datang di SuaraPro Azure. Studio ini dirancang khusus untuk menghasilkan audio berkualitas tinggi menggunakan teknologi Microsoft Azure AI.");
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [isLoading, setIsLoading] = useState(false);
+            const [audioUrl, setAudioUrl] = useState(null);
+            
+            const [rate, setRate] = useState(1);
+            const [pitch, setPitch] = useState(0);
+            
+            // Region dan API Key sekarang ditangani oleh Backend (Netlify Function)
+            // Tidak ada variabel sensitif di sini.
+
+            const audioRef = useRef(new Audio());
+            const audioCtxRef = useRef(null); 
+            const sourceRef = useRef(null);
+            const [audioContext, setAudioContext] = useState(null);
+            const [audioSource, setAudioSource] = useState(null);
+
+            const azureVoices = [
+                { name: "id-ID-ArdiNeural", label: "Ardi (ID)", gender: "Male", lang: "id-ID" },
+                { name: "id-ID-GadisNeural", label: "Gadis (ID)", gender: "Female", lang: "id-ID" },
+                { name: "jv-ID-DimasNeural", label: "Dimas (Jawa)", gender: "Male", lang: "jv-ID" },
+                { name: "jv-ID-SitiNeural", label: "Siti (Jawa)", gender: "Female", lang: "jv-ID" },
+                { name: "su-ID-JajangNeural", label: "Jajang (Sunda)", gender: "Male", lang: "su-ID" },
+                { name: "su-ID-TutiNeural", label: "Tuti (Sunda)", gender: "Female", lang: "su-ID" },
+                { name: "en-US-AvaNeural", label: "Ava (US)", gender: "Female", lang: "en-US" },
+                { name: "en-US-AndrewNeural", label: "Andrew (US)", gender: "Male", lang: "en-US" },
+                { name: "en-GB-RyanNeural", label: "Ryan (UK)", gender: "Male", lang: "en-GB" },
+                { name: "en-GB-SoniaNeural", label: "Sonia (UK)", gender: "Female", lang: "en-GB" },
+            ];
+            const [selectedVoice, setSelectedVoice] = useState(azureVoices[0].name);
+
+            useEffect(() => {
+                audioRef.current.crossOrigin = "anonymous";
+                audioRef.current.onended = () => setIsPlaying(false);
+                return () => { if (audioCtxRef.current) audioCtxRef.current.close(); };
+            }, []);
+
+            const ensureAudioContext = () => {
+                if (!audioCtxRef.current) {
+                    const AC = window.AudioContext || window.webkitAudioContext;
+                    const ctx = new AC();
+                    const source = ctx.createMediaElementSource(audioRef.current);
+                    audioCtxRef.current = ctx;
+                    sourceRef.current = source;
+                    setAudioContext(ctx);
+                    setAudioSource(source);
+                }
+                if (audioCtxRef.current.state === 'suspended') {
+                    audioCtxRef.current.resume();
+                }
+            };
+
+            const generateAzure = async () => {
+                ensureAudioContext();
+                if (isPlaying) { 
+                    audioRef.current.pause();
+                    audioRef.current.currentTime = 0;
+                    setIsPlaying(false);
+                }
+                setIsLoading(true);
+
+                const currentVoice = azureVoices.find(v => v.name === selectedVoice);
+                
+                // Payload yang dikirim ke Backend Netlify
+                const payload = {
+                    text: text,
+                    voiceName: selectedVoice,
+                    voiceLang: currentVoice ? currentVoice.lang : 'id-ID',
+                    voiceGender: currentVoice ? currentVoice.gender : 'Female',
+                    rate: rate,
+                    pitch: pitch
+                };
+
+                try {
+                    // Memanggil Netlify Function (Proxy)
+                    // Perhatikan URL-nya: '/api/tts'
+                    const response = await fetch('/api/tts', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errData = await response.json();
+                        throw new Error(errData.error || "Server Error");
+                    }
+
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    setAudioUrl(url);
+                    audioRef.current.src = url;
+                    try {
+                        await audioRef.current.play();
+                        setIsPlaying(true);
+                    } catch (playError) {
+                        console.error("Autoplay blocked:", playError);
+                        alert("Browser memblokir autoplay. Silakan klik Play lagi.");
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert("Gagal Generate: " + err.message);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const handleStop = () => {
+                if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
+                setIsPlaying(false);
+            };
+
+            const getSliderStyle = (val, min, max) => {
+                const percentage = ((val - min) / (max - min)) * 100;
+                return { backgroundSize: `${percentage}% 100%` };
+            };
+
+            return (
+                <div className="flex-1 flex flex-col md:flex-row relative z-10 h-full">
+                    
+                    {/* SIDEBAR - Mobile 40%, Desktop Full */}
+                    <div className="w-full md:w-[360px] glass border-r border-white/5 flex flex-col h-[40%] md:h-full z-20 shadow-2xl shrink-0">
+                        
+                        {/* HEADER */}
+                        <div className="p-6 border-b border-white/5 flex justify-between items-center shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+                                     <i className="fas fa-cube text-white text-lg"></i>
+                                </div>
+                                <div>
+                                    <div className="flex items-baseline gap-1">
+                                        <h1 className="text-lg font-bold text-white tracking-tight">SuaraPro</h1>
+                                        <span className="text-lg font-bold text-sky-400">Azure</span>
+                                    </div>
+                                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.15em] leading-none">Studio Edition</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* CONTENT */}
+                        <div className="flex-1 overflow-y-auto p-6 space-y-8 min-h-0">
+                            
+                            {/* VOICE MODEL */}
+                            <div>
+                                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-3">Voice Model</h3>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {azureVoices.map((v) => (
+                                        <div key={v.name} onClick={() => setSelectedVoice(v.name)} className={`glass-card p-2.5 rounded-lg cursor-pointer flex items-center gap-3 group ${selectedVoice === v.name ? 'border-sky-500/50 bg-sky-500/10' : 'hover:bg-white/5'}`}>
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] shadow-lg ${selectedVoice === v.name ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white' : 'bg-slate-800 text-slate-500'}`}>
+                                                <i className={`fas ${v.gender === 'Male' ? 'fa-mars' : 'fa-venus'}`}></i>
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className={`text-xs font-semibold truncate transition-colors ${selectedVoice === v.name ? 'text-white' : 'text-slate-300 group-hover:text-white'}`}>{v.label}</p>
+                                            </div>
+                                            {selectedVoice === v.name && <div className="w-1.5 h-1.5 bg-sky-400 rounded-full shadow-[0_0_8px_#38bdf8] shrink-0"></div>}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* TUNING */}
+                            <div className="space-y-5">
+                                <h3 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Fine Tuning</h3>
+                                <div>
+                                    <div className="flex justify-between mb-2">
+                                        <span className="text-[10px] text-slate-400">Speed</span>
+                                        <span className="text-[10px] font-mono text-sky-400">{rate}x</span>
+                                    </div>
+                                    <input type="range" min="0.5" max="2.0" step="0.1" value={rate} onChange={(e) => setRate(e.target.value)} className="w-full" style={getSliderStyle(rate, 0.5, 2.0)} />
+                                </div>
+                                <div>
+                                    <div className="flex justify-between mb-2">
+                                        <span className="text-[10px] text-slate-400">Pitch</span>
+                                        <span className="text-[10px] font-mono text-sky-400">{pitch}%</span>
+                                    </div>
+                                    <input type="range" min="-50" max="50" step="5" value={pitch} onChange={(e) => setPitch(e.target.value)} className="w-full" style={getSliderStyle(pitch, -50, 50)} />
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* --- SIDEBAR FOOTER: POWERED BY ONLY --- */}
+                        <div className="p-4 border-t border-white/5 text-center bg-slate-950/30">
+                            <p className="text-[10px] text-slate-500 font-medium">
+                                Powered by <span className="font-bold text-slate-200">Microsoft Azure AI</span>
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* MAIN AREA - Mobile 60%, Desktop Full */}
+                    <div className="flex-1 flex flex-col h-[60%] md:h-full relative min-w-0">
+                        <div className="flex-1 p-4 md:p-6 relative">
+                            <div className="w-full h-full glass rounded-2xl p-1 relative overflow-hidden group flex flex-col">
+                                <textarea 
+                                    className="w-full h-full bg-transparent p-5 md:p-6 text-base md:text-lg text-slate-200 focus:outline-none resize-none font-light leading-relaxed placeholder-slate-600"
+                                    placeholder="Ketik narasi Anda di sini..."
+                                    value={text}
+                                    onChange={(e) => setText(e.target.value)}
+                                    spellCheck="false"
+                                ></textarea>
+                                <div className="p-4 flex justify-end text-slate-500 text-[10px] font-mono opacity-50">
+                                    {text.length} CHARS
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* BOTTOM CONTROLS + NEW FOOTER */}
+                        <div className="glass border-t border-white/5 relative z-30 shrink-0">
+                            <div className="h-24 px-6 md:px-8 flex items-center justify-between gap-6">
+                                <div className="flex-1 h-full flex items-center opacity-60 max-w-2xl">
+                                    <AudioVisualizer isPlaying={isPlaying} audioContext={audioContext} sourceNode={audioSource} />
+                                </div>
+
+                                <div className="flex items-center gap-3 shrink-0">
+                                    {audioUrl && !isLoading && (
+                                        <a href={audioUrl} download={`StudioExport-${Date.now()}.mp3`} className="w-12 h-12 rounded-xl border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/5 transition-all" title="Download MP3">
+                                            <i className="fas fa-download text-lg"></i>
+                                        </a>
+                                    )}
+                                    <button 
+                                        onClick={isPlaying ? handleStop : generateAzure}
+                                        disabled={isLoading}
+                                        className={`h-12 px-6 rounded-xl font-bold text-xs tracking-wider uppercase transition-all flex items-center gap-2 shadow-xl
+                                            ${isPlaying ? 'bg-red-500/10 text-red-400 border border-red-500/50 hover:bg-red-500/20' : 'bg-sky-600 text-white hover:bg-sky-500 hover:scale-105 glow-active'} 
+                                            ${isLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                    >
+                                        {isLoading ? (
+                                            <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Process...</>
+                                        ) : isPlaying ? (
+                                            <><i className="fas fa-stop"></i> Stop</>
+                                        ) : (
+                                            <><i className="fas fa-play"></i> Generate</>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* --- NEW MAIN FOOTER --- */}
+                            <div className="pb-3 text-center">
+                                <p className="text-[10px] text-slate-500/50 font-medium tracking-wide">
+                                    (2025) Crafted with <span className="text-red-500/80">❤️</span> by Om Ger | Ai-Labs
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
